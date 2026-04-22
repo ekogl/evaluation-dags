@@ -74,6 +74,7 @@ with DAG(
                 is_delete_operator_pod=True,
                 image_pull_policy="IfNotPresent",
                 execution_timeout=timedelta(hours=1),
+                node_selector={"kubernetes.io/worker": "worker"},
             )
             individual_tasks.append(task)
 
@@ -96,6 +97,7 @@ with DAG(
         is_delete_operator_pod=True,
         image_pull_policy="IfNotPresent",
         execution_timeout=timedelta(hours=1),
+        node_selector={"kubernetes.io/worker": "worker"},
     )
 
     # -------------------------------------------------------------------------
@@ -120,6 +122,7 @@ with DAG(
         is_delete_operator_pod=True,
         image_pull_policy="IfNotPresent",
         execution_timeout=timedelta(hours=1),
+        node_selector={"kubernetes.io/worker": "worker"},
     )
 
     # -------------------------------------------------------------------------
@@ -157,6 +160,7 @@ with DAG(
                         is_delete_operator_pod=True,
                         image_pull_policy="IfNotPresent",
                         execution_timeout=timedelta(hours=1),
+                        node_selector={"kubernetes.io/worker": "worker"},
                     )
                     freq_workers.append(freq_calc_plot)
 
@@ -178,6 +182,7 @@ with DAG(
                     is_delete_operator_pod=True,
                     image_pull_policy="IfNotPresent",
                     execution_timeout=timedelta(hours=1),
+                    node_selector={"kubernetes.io/worker": "worker"},
                 )
 
                 freq_workers >> freq_merge
@@ -199,6 +204,7 @@ with DAG(
                     is_delete_operator_pod=False,
                     image_pull_policy="IfNotPresent",
                     execution_timeout=timedelta(hours=1),
+                    node_selector={"kubernetes.io/worker": "worker"},
                 )
 
         # Wire upstream → freq group
@@ -222,6 +228,7 @@ with DAG(
             is_delete_operator_pod=True,
             image_pull_policy="IfNotPresent",
             execution_timeout=timedelta(hours=1),
+            node_selector={"kubernetes.io/worker": "worker"},
         )
         mutations_overlap_tasks.append(mutations_overlap)
 

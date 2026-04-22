@@ -163,24 +163,37 @@ with DAG(
     # -------------------------------------------------------------------------
     # classification_inference (downstream of full group)
     # -------------------------------------------------------------------------
-    classification_inference = KubernetesPodOperator(
-        task_id="classification_inference",
-        name="classification-inference-task",
+    classification_inference_task = KubernetesPodOperator(
+        task_id="classification_inference_task_training",
+        name="classification-inference-task-training",
         namespace=NAMESPACE,
-        image="kogsi/image_classification:classification-inference-tf2",
+        image="kogsi/image_classification:classification-train-tf2",
         arguments=[
-            "--saved_model_path", "models/",
-            "--inference_data_path", "inference/grayscaled",
-            "--output_result_path", "inference/results/inference_results.json",
+            "--train_data_path", "training/grayscaled",
+            "--output_artifact_path", "models/",
             "--bucket_name", MINIO_BUCKET,
+            "--validation_split", "0.2",
+            # "--validation_data_path", "training/validation",
+            "--epochs", "5",
+            "--batch_size", "32",
+            "--early_stop_patience", "5",
+            "--dropout_rate", "0.2",
+            "--image_size", "256 256",
+            "--num_layers", "3",
+            "--filters_per_layer", "64 64 64",
+            "--kernel_sizes", "3 3 3",
             "--workers", "4",
         ],
         env_vars=minio_env_dict,
         get_logs=True,
         is_delete_operator_pod=True,
-        image_pull_policy="IfNotPresent",
-        startup_timeout_seconds=600,
+        image_pull_policy="Always",
+        startup_timeout_seconds=600,  # increase time for startup (large image)
         node_selector={"kubernetes.io/worker": "worker"},
     )
 
-    preprocessing_group >> classification_inference
+    preprocessing_group >> classification_inference_task
+    
+    
+
+    # )
