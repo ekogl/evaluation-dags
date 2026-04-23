@@ -35,16 +35,11 @@ with DAG(
     max_active_tasks=42,
 ) as dag:
 
-    NUM_PARALLEL_TASKS = int(Variable.get("image_classification_pod_count", default_var=5))
+    NUM_TASKS_PROPROCESS = int(Variable.get("iisas_preprocessing_pod_count", default_var=1))
+    NUM_TASKS_INFERENCE = int(Variable.get("iisas_inference_pod_count", default_var=1))
 
-    # -------------------------------------------------------------------------
-    # Group: preprocessing_pipeline
-    # -------------------------------------------------------------------------
     with TaskGroup(group_id="preprocessing_pipeline") as preprocessing_group:
-        
-        tasks = []
-        for i in range(NUM_PARALLEL_TASKS):
-
+        for i in range(NUM_TASKS_PROPROCESS):
             offset = KubernetesPodOperator(
                 task_id=f"offset_{i}",
                 name=f"offset-task-{i}",
@@ -56,7 +51,7 @@ with DAG(
                     "--dx", "0", "--dy", "0",
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", str(i),
-                    "--num_tasks", str(NUM_PARALLEL_TASKS),
+                    "--num_tasks", str(NUM_TASKS_PROPROCESS),
                 ],
                 env_vars=minio_env_dict,
                 get_logs=True,
@@ -160,7 +155,13 @@ with DAG(
                 node_selector={"kubernetes.io/worker": "worker"},
             )
             
-            classification_inference = KubernetesPodOperator(
+            offset >> crop >> enhance_brightness >> enhance_contrast >> rotate >> grayscale
+
+    with TaskGroup(group_id="inference_pipeline") as inference_group:
+        
+        inference_workers = []
+        for i in range(NUM_TASKS_INFERENCE):
+            worker = KubernetesPodOperator(
                 task_id=f"classification_inference_{i}",
                 name=f"classification-inference-task-{i}",
                 namespace=NAMESPACE,
@@ -168,11 +169,13 @@ with DAG(
                 arguments=[
                     "--mode", "inference",
                     "--saved_model_path", "models/",
-                    "--inference_data_path", f"inference/grayscaled/{i}",
+                    "--inference_data_path", "inference/grayscaled",
                     "--output_result_path", f"inference/results/inference_results_{i}.json", 
                     "--bucket_name", MINIO_BUCKET,
                     "--workers", "4",
-                    "--batch_size", "32"
+                    "--batch_size", "32",
+                    "--chunk_id", str(i),
+                    "--num_tasks", str(NUM_TASKS_INFERENCE)
                 ],
                 env_vars=minio_env_dict,
                 get_logs=True,
@@ -181,27 +184,26 @@ with DAG(
                 startup_timeout_seconds=600,
                 node_selector={"kubernetes.io/worker": "worker"},
             )
-                    
+            inference_workers.append(worker)
 
-            offset >> crop >> enhance_brightness >> enhance_contrast >> rotate >> grayscale >> classification_inference
-            tasks.append(classification_inference)
+        merge_results = KubernetesPodOperator(
+            task_id="merge_results",
+            name="merge-results-task",
+            namespace=NAMESPACE,
+            image="kogsi/image_classification:classification-inference-tf2", 
+            arguments=[
+                "--mode", "merge",
+                "--input_results_prefix", "inference/results/", 
+                "--output_result_path", "inference/final_merged/inference_results.json", 
+                "--bucket_name", MINIO_BUCKET,
+            ],
+            env_vars=minio_env_dict,
+            get_logs=True,
+            is_delete_operator_pod=True,
+            image_pull_policy="Always",
+            node_selector={"kubernetes.io/worker": "worker"},
+        )
+        
+        inference_workers >> merge_results
 
-    merge_results = KubernetesPodOperator(
-        task_id="merge_results",
-        name="merge-results-task",
-        namespace=NAMESPACE,
-        image="kogsi/image_classification:classification-inference-tf2", 
-        arguments=[
-            "--mode", "merge",
-            "--input_results_prefix", "inference/results/", 
-            "--output_result_path", "inference/final_merged/inference_results.json", 
-            "--bucket_name", MINIO_BUCKET,
-        ],
-        env_vars=minio_env_dict,
-        get_logs=True,
-        is_delete_operator_pod=True,
-        image_pull_policy="Always",
-        node_selector={"kubernetes.io/worker": "worker"},
-    )
-
-    tasks >> merge_results
+    preprocessing_group >> inference_group
