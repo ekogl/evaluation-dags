@@ -27,7 +27,7 @@ minio_env_dict = {
 }
 
 with DAG(
-    dag_id="image_classification_dag_inference",
+    dag_id="iiisas_training",
     default_args=default_args,
     schedule=None,
     catchup=False,
