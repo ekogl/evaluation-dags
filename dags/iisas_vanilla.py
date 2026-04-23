@@ -144,7 +144,7 @@ with DAG(
                 image="kogsi/image_classification:to-grayscale",
                 arguments=[
                     "--input_image_path", f"inference/rotated/{i}",
-                    "--output_image_path", f"inference/grayscaled/{i}",
+                    "--output_image_path", f"inference/grayscaled",
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", "0", "--num_tasks", "1",
                 ],
