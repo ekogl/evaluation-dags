@@ -58,7 +58,7 @@ with DAG(
                 ],
                 env_vars=minio_env_dict,
                 get_logs=True,
-                is_delete_operator_pod=True,
+                is_delete_operator_pod=False,
                 image_pull_policy="IfNotPresent",
                 node_selector={"node-role.kubernetes.io/worker": "worker"},
             )

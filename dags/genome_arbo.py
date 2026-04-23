@@ -281,7 +281,7 @@ with DAG(
             env_vars=minio_env_vars,
             is_delete_operator_pod=True,
             image_pull_policy="IfNotPresent",
-            node_selector={"kubernetes.io/worker": "worker"},
+            node_selector={"node-role.kubernetes.io/worker": "worker"},
         ).expand(
             arguments=extract_pod_args(ind_plan)
         )
@@ -300,7 +300,7 @@ with DAG(
             env_vars=minio_env_vars,
             is_delete_operator_pod=True,
             image_pull_policy="IfNotPresent",
-            node_selector={"kubernetes.io/worker": "worker"},
+            node_selector={"node-role.kubernetes.io/worker": "worker"},
         )
 
         feedback = report_feedback(ind_plan, "genome_individual", "individual_tasks.workers", True)
@@ -323,7 +323,7 @@ with DAG(
             image_pull_policy="IfNotPresent",
             env_vars=minio_env_vars,
             is_delete_operator_pod=True,
-            node_selector={"kubernetes.io/worker": "worker"},
+            node_selector={"node-role.kubernetes.io/worker": "worker"},
         ).expand(
             arguments=get_w_args(plan_data)
         )
@@ -337,7 +337,7 @@ with DAG(
             env_vars=minio_env_vars,
             is_delete_operator_pod=True,
             image_pull_policy="IfNotPresent",
-            node_selector={"kubernetes.io/worker": "worker"},
+            node_selector={"node-role.kubernetes.io/worker": "worker"},
         ).expand(
             arguments=get_m_args(plan_data)
         )
@@ -368,7 +368,7 @@ with DAG(
         is_delete_operator_pod=True,
         image_pull_policy="IfNotPresent",
         execution_timeout=timedelta(hours=1),
-        node_selector={"kubernetes.io/worker": "worker"},
+        node_selector={"node-role.kubernetes.io/worker": "worker"},
     )
 
     mutations_data = mutations_overlap_data(populations)
