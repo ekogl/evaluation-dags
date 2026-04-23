@@ -38,7 +38,7 @@ minio_env_dict = {
 NUM_OF_PICTURES = 8
 
 with DAG(
-        dag_id="image_classification_dag_inference_arbo",
+        dag_id="iisas_arbo",
         default_args=default_args,
         description="IISAS Image Classification Inference Pipeline",
         schedule=None,

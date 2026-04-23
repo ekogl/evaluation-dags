@@ -44,7 +44,7 @@ minio_env_vars = [
 ]
 
 with DAG(
-        dag_id="genome_data_processing_arbo",
+        dag_id="genome_arbo",
         default_args=default_args,
         description="Genome processing pipeline",
         schedule=None,
