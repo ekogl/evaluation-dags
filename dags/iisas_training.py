@@ -60,7 +60,7 @@ with DAG(
                 get_logs=True,
                 is_delete_operator_pod=False,
                 image_pull_policy="IfNotPresent",
-                node_selector={"node-role.kubernetes.io/worker": "worker"},
+                node_selector={"kubernetes.io/worker": "worker"},
             )
 
             crop = KubernetesPodOperator(
@@ -80,7 +80,7 @@ with DAG(
                 get_logs=True,
                 is_delete_operator_pod=True,
                 image_pull_policy="IfNotPresent",
-                node_selector={"node-role.kubernetes.io/worker": "worker"},
+                node_selector={"kubernetes.io/worker": "worker"},
             )
 
             enhance_brightness = KubernetesPodOperator(
@@ -99,7 +99,7 @@ with DAG(
                 get_logs=True,
                 is_delete_operator_pod=True,
                 image_pull_policy="IfNotPresent",
-                node_selector={"node-role.kubernetes.io/worker": "worker"},
+                node_selector={"kubernetes.io/worker": "worker"},
             )
 
             enhance_contrast = KubernetesPodOperator(
@@ -118,7 +118,7 @@ with DAG(
                 get_logs=True,
                 is_delete_operator_pod=True,
                 image_pull_policy="IfNotPresent",
-                node_selector={"node-role.kubernetes.io/worker": "worker"},
+                node_selector={"kubernetes.io/worker": "worker"},
             )
 
             rotate = KubernetesPodOperator(
@@ -137,7 +137,7 @@ with DAG(
                 get_logs=True,
                 is_delete_operator_pod=True,
                 image_pull_policy="IfNotPresent",
-                node_selector={"node-role.kubernetes.io/worker": "worker"},
+                node_selector={"kubernetes.io/worker": "worker"},
             )
 
             grayscale = KubernetesPodOperator(
@@ -155,7 +155,7 @@ with DAG(
                 get_logs=True,
                 is_delete_operator_pod=True,
                 image_pull_policy="IfNotPresent",
-                node_selector={"node-role.kubernetes.io/worker": "worker"},
+                node_selector={"kubernetes.io/worker": "worker"},
             )
 
             offset >> crop >> enhance_brightness >> enhance_contrast >> rotate >> grayscale
@@ -189,7 +189,7 @@ with DAG(
         is_delete_operator_pod=True,
         image_pull_policy="Always",
         startup_timeout_seconds=600,  # increase time for startup (large image)
-        node_selector={"node-role.kubernetes.io/worker": "worker"},
+        node_selector={"kubernetes.io/worker": "worker"},
     )
 
     preprocessing_group >> classification_inference_task
