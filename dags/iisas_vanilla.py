@@ -176,7 +176,7 @@ with DAG(
                 env_vars=minio_env_dict,
                 get_logs=True,
                 is_delete_operator_pod=True,
-                image_pull_policy="IfNotPresent",
+                image_pull_policy="Always",
                 startup_timeout_seconds=600,
                 node_selector={"kubernetes.io/worker": "worker"},
             )
