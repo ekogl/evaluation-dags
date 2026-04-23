@@ -35,12 +35,14 @@ with DAG(
     max_active_tasks=42,
 ) as dag:
 
-    NUM_PARALLEL_TASKS = int(Variable.get("image_classification_pod_count", default_var=1))
+    NUM_PARALLEL_TASKS = int(Variable.get("image_classification_pod_count", default_var=5))
 
     # -------------------------------------------------------------------------
     # Group: preprocessing_pipeline
     # -------------------------------------------------------------------------
     with TaskGroup(group_id="preprocessing_pipeline") as preprocessing_group:
+        
+        tasks = []
         for i in range(NUM_PARALLEL_TASKS):
 
             offset = KubernetesPodOperator(
@@ -147,7 +149,7 @@ with DAG(
                 image="kogsi/image_classification:to-grayscale",
                 arguments=[
                     "--input_image_path", f"inference/rotated/{i}",
-                    "--output_image_path", "inference/grayscaled",
+                    "--output_image_path", f"inference/grayscaled/{i}",
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", "0", "--num_tasks", "1",
                 ],
@@ -157,30 +159,29 @@ with DAG(
                 image_pull_policy="IfNotPresent",
                 node_selector={"kubernetes.io/worker": "worker"},
             )
+            
+            classification_inference = KubernetesPodOperator(
+                task_id=f"classification_inference_{i}",
+                name=f"classification-inference-task-{i}",
+                namespace=NAMESPACE,
+                image="kogsi/image_classification:classification-inference-tf2",
+                arguments=[
+                    "--saved_model_path", "models/",
+                    "--inference_data_path", f"inference/grayscaled/{i}",
+                    "--output_result_path", f"inference/results/inference_results_{i}.json", 
+                    "--bucket_name", MINIO_BUCKET,
+                    "--workers", "4",
+                    "--batch_size", "32"
+                ],
+                env_vars=minio_env_dict,
+                get_logs=True,
+                is_delete_operator_pod=True,
+                image_pull_policy="IfNotPresent",
+                startup_timeout_seconds=600,
+                node_selector={"kubernetes.io/worker": "worker"},
+            )
+            
+            
 
-            offset >> crop >> enhance_brightness >> enhance_contrast >> rotate >> grayscale
-
-    # -------------------------------------------------------------------------
-    # classification_inference (downstream of full group)
-    # -------------------------------------------------------------------------
-    classification_inference = KubernetesPodOperator(
-        task_id="classification_inference",
-        name="classification-inference-task",
-        namespace=NAMESPACE,
-        image="kogsi/image_classification:classification-inference-tf2",
-        arguments=[
-            "--saved_model_path", "models/",
-            "--inference_data_path", "inference/grayscaled",
-            "--output_result_path", "inference/results/inference_results.json",
-            "--bucket_name", MINIO_BUCKET,
-            "--workers", "4",
-        ],
-        env_vars=minio_env_dict,
-        get_logs=True,
-        is_delete_operator_pod=True,
-        image_pull_policy="IfNotPresent",
-        startup_timeout_seconds=600,
-        node_selector={"kubernetes.io/worker": "worker"},
-    )
-
-    preprocessing_group >> classification_inference
+            offset >> crop >> enhance_brightness >> enhance_contrast >> rotate >> grayscale >> classification_inference
+            tasks.append(classification_inference)
