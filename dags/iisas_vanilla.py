@@ -166,6 +166,7 @@ with DAG(
                 namespace=NAMESPACE,
                 image="kogsi/image_classification:classification-inference-tf2",
                 arguments=[
+                    "--mode", "inference",
                     "--saved_model_path", "models/",
                     "--inference_data_path", f"inference/grayscaled/{i}",
                     "--output_result_path", f"inference/results/inference_results_{i}.json", 
@@ -180,8 +181,27 @@ with DAG(
                 startup_timeout_seconds=600,
                 node_selector={"kubernetes.io/worker": "worker"},
             )
-            
-            
+                    
 
             offset >> crop >> enhance_brightness >> enhance_contrast >> rotate >> grayscale >> classification_inference
             tasks.append(classification_inference)
+
+    merge_results = KubernetesPodOperator(
+        task_id="merge_results",
+        name="merge-results-task",
+        namespace=NAMESPACE,
+        image="kogsi/image_classification:classification-inference-tf2", 
+        arguments=[
+            "--mode", "merge",
+            "--input_results_prefix", "inference/results/", 
+            "--output_result_path", "inference/final_merged/inference_results.json", 
+            "--bucket_name", MINIO_BUCKET,
+        ],
+        env_vars=minio_env_dict,
+        get_logs=True,
+        is_delete_operator_pod=True,
+        image_pull_policy="Always",
+        node_selector={"kubernetes.io/worker": "worker"},
+    )
+
+    tasks >> merge_results
