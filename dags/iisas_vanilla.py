@@ -47,7 +47,7 @@ with DAG(
                 image="kogsi/image_classification:offset",
                 arguments=[
                     "--input_image_path", "inference/input",
-                    "--output_image_path", f"inference/offsetted/{i}",
+                    "--output_image_path", f"inference/offsetted/{i}/",
                     "--dx", "0", "--dy", "0",
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", str(i),
@@ -66,8 +66,8 @@ with DAG(
                 namespace=NAMESPACE,
                 image="kogsi/image_classification:crop",
                 arguments=[
-                    "--input_image_path", f"inference/offsetted/{i}",
-                    "--output_image_path", f"inference/cropped/{i}",
+                    "--input_image_path", f"inference/offsetted/{i}/",
+                    "--output_image_path", f"inference/cropped/{i}/",
                     "--left", "20", "--top", "20",
                     "--right", "330", "--bottom", "330",
                     "--bucket_name", MINIO_BUCKET,
@@ -86,8 +86,8 @@ with DAG(
                 namespace=NAMESPACE,
                 image="kogsi/image_classification:enhance-brightness",
                 arguments=[
-                    "--input_image_path", f"inference/cropped/{i}",
-                    "--output_image_path", f"inference/enhanced_brightness/{i}",
+                    "--input_image_path", f"inference/cropped/{i}/",
+                    "--output_image_path", f"inference/enhanced_brightness/{i}/",
                     "--factor", str(1.2),
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", "0", "--num_tasks", "1",
@@ -105,8 +105,8 @@ with DAG(
                 namespace=NAMESPACE,
                 image="kogsi/image_classification:enhance-contrast",
                 arguments=[
-                    "--input_image_path", f"inference/enhanced_brightness/{i}",
-                    "--output_image_path", f"inference/enhanced_contrast/{i}",
+                    "--input_image_path", f"inference/enhanced_brightness/{i}/",
+                    "--output_image_path", f"inference/enhanced_contrast/{i}/",
                     "--factor", str(1.2),
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", "0", "--num_tasks", "1",
@@ -124,8 +124,8 @@ with DAG(
                 namespace=NAMESPACE,
                 image="kogsi/image_classification:rotate",
                 arguments=[
-                    "--input_image_path", f"inference/enhanced_contrast/{i}",
-                    "--output_image_path", f"inference/rotated/{i}",
+                    "--input_image_path", f"inference/enhanced_contrast/{i}/",
+                    "--output_image_path", f"inference/rotated/{i}/",
                     "--rotation", "0",
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", "0", "--num_tasks", "1",
@@ -143,7 +143,7 @@ with DAG(
                 namespace=NAMESPACE,
                 image="kogsi/image_classification:to-grayscale",
                 arguments=[
-                    "--input_image_path", f"inference/rotated/{i}",
+                    "--input_image_path", f"inference/rotated/{i}/",
                     "--output_image_path", f"inference/grayscaled",
                     "--bucket_name", MINIO_BUCKET,
                     "--chunk_id", "0", "--num_tasks", "1",
