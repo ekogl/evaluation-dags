@@ -20,7 +20,7 @@ default_args = {
     "retry_delay": timedelta(minutes=5),
 }
 
-MINIO_ENDPOINT = "minio.stefan-dev.svc.cluster.local:9000"
+MINIO_ENDPOINT = "minio.default.svc.cluster.local:9000"
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
 MINIO_BUCKET = "image-classification-data"
