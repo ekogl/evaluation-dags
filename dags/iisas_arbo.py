@@ -34,7 +34,6 @@ minio_env_dict = {
     "MINIO_SECURE": "false"
 }
 
-# NOTE: only as fallback, should not be used
 NUM_OF_PICTURES = 8
 
 with DAG(
@@ -46,11 +45,58 @@ with DAG(
         tags=["iisas", "arbo", "minio"],
         max_active_tasks=20,
 ) as dag:
-    # setup task
-    @task
-    def prepare_pipeline_configs():
-        optimizer = ArboOptimizer(namespace=NAMESPACE, is_local=False)
 
+    # =================================
+    # HELPER TASKS
+    # =================================
+    @task(trigger_rule=TriggerRule.ALL_SUCCESS)
+    def report_feedback(metadata: dict, task_name: str, target_group_id: str, is_group: bool, **context):
+        optimizer = ArboOptimizer(namespace=NAMESPACE, is_local=False)
+        dag_id = context["dag"].dag_id
+        run_id = context["run_id"]
+
+        # FIX: Using metadata["start_time"] for accurate task group duration
+        local_start = metadata["start_time"]
+        fallback_dur = time.time() - local_start
+
+        optimizer.report_success(
+            task_name=task_name,
+            s=metadata["s"],
+            gamma=metadata["gamma"],
+            cluster_load=metadata["cluster_load"],
+            predicted_amdahl=metadata["amdahl_time"],
+            predicted_residual=metadata["pred_residual"],
+            predicted_std=metadata["pred_std"],
+            dag_id=dag_id,
+            run_id=run_id,
+            target_id=target_group_id,
+            fallback_duration=fallback_dur,
+            is_group=is_group
+        )
+
+    @task
+    def get_w_args(data: dict):
+        return data["workers"]
+
+    @task
+    def get_m_args(data: dict):
+        return data["merger"]
+
+    @task
+    def extract_configs(data: dict):
+        return data["configurations"]
+
+    @task
+    def extract_metadata(data: dict):
+        return data["metadata"]
+
+
+    # =================================
+    # PREPARATION TASKS
+    # =================================
+    @task()
+    def prepare_preprocessing_configs():
+        optimizer = ArboOptimizer(namespace=NAMESPACE, is_local=False)
         cluster_load = PrometheusClient(NAMESPACE).get_cluster_load()
 
         logger.info(f"Cluster Load set to {cluster_load}")
@@ -64,11 +110,10 @@ with DAG(
         )
 
         if not input_quantity:
-            # TODO: figure out a better way to handle this case
             logger.info("Falling back to default (= NUM_OF_PICTURES * 1024 * 1024)")
             input_quantity = NUM_OF_PICTURES * 1024 * 1024
 
-        configs = optimizer.get_task_configs("iisas_image_inference", input_quantity=input_quantity,
+        configs = optimizer.get_task_configs("iisas_preprocessing", input_quantity=input_quantity,
                                              cluster_load=cluster_load)
         s_opt = len(configs)
 
@@ -77,7 +122,7 @@ with DAG(
         predicted_residual = configs[0]["residual_prediction"]
         predicted_std = configs[0]["predicted_std"]
 
-        logger.info(f"Configuration received: s={s_opt}, gamma={calculated_gamma}, predicted time: {predicted_amdahl + predicted_residual:2f}")
+        logger.info(f"Preprocessing Plan: s={s_opt}, gamma={calculated_gamma}, predicted time: {predicted_amdahl + predicted_residual:2f}")
 
         configurations = []
         for i in range(s_opt):
@@ -104,31 +149,27 @@ with DAG(
                     "--output_image_path", f"inference/enhanced_brightness/{i}/",
                     "--factor", str(1.2),
                     "--bucket_name", MINIO_BUCKET,
-                    "--chunk_id", "0",
-                    "--num_tasks", "1",
+                    "--chunk_id", "0", "--num_tasks", "1",
                 ],
                 "enhance_contrast_args": [
                     "--input_image_path", f"inference/enhanced_brightness/{i}/",
                     "--output_image_path", f"inference/enhanced_contrast/{i}/",
                     "--factor", str(1.2),
                     "--bucket_name", MINIO_BUCKET,
-                    "--chunk_id", "0",
-                    "--num_tasks", "1",
+                    "--chunk_id", "0", "--num_tasks", "1",
                 ],
                 "rotate_args": [
                     "--input_image_path", f"inference/enhanced_contrast/{i}/",
                     "--output_image_path", f"inference/rotated/{i}/",
-                    "--rotation", " ".join(["0", "90", "180", "270"]),
+                    "--rotation", "0",
                     "--bucket_name", MINIO_BUCKET,
-                    "--chunk_id", "0",
-                    "--num_tasks", "1",
+                    "--chunk_id", "0", "--num_tasks", "1",
                 ],
                 "grayscale_args": [
                     "--input_image_path", f"inference/rotated/{i}/",
                     "--output_image_path", f"inference/grayscaled",
                     "--bucket_name", MINIO_BUCKET,
-                    "--chunk_id", "0",
-                    "--num_tasks", "1",
+                    "--chunk_id", "0", "--num_tasks", "1",
                 ]
             }
             configurations.append(config)
@@ -146,17 +187,76 @@ with DAG(
             }
         }
 
-
     @task
-    def extract_configs(data: dict):
-        return data["configurations"]
+    def prepare_inference_configs():
+        optimizer = ArboOptimizer(namespace=NAMESPACE, is_local=False)
+        cluster_load = PrometheusClient(NAMESPACE).get_cluster_load()
+
+        logger.info(f"Cluster Load set to {cluster_load}")
+
+        input_quantity = MinioClient.get_directory_size(
+            endpoint_url=f"http://{MINIO_ENDPOINT}",
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            bucket_name=MINIO_BUCKET,
+            prefix="inference/grayscaled"
+        )
+
+        if not input_quantity:
+            logger.info("Falling back to default (= NUM_OF_PICTURES * 1024 * 1024)")
+            input_quantity = NUM_OF_PICTURES * 1024 * 1024
+
+        configs = optimizer.get_task_configs("iisas_inference", input_quantity=input_quantity,
+                                             cluster_load=cluster_load)
+        s_opt = len(configs)
+
+        calculated_gamma = configs[0]["gamma"]
+        predicted_amdahl = configs[0]["amdahl_time"]
+        predicted_residual = configs[0]["residual_prediction"]
+        predicted_std = configs[0]["predicted_std"]
+
+        logger.info(f"Inference Plan: s={s_opt}, gamma={calculated_gamma}, predicted time: {predicted_amdahl + predicted_residual:2f}")
+
+        worker_args = []
+        for i in range(s_opt):
+            worker_args.append([
+                "--mode", "inference",
+                "--saved_model_path", "models/",
+                "--inference_data_path", "inference/grayscaled",
+                "--output_result_path", f"inference/results/inference_results_{i}.json", 
+                "--bucket_name", MINIO_BUCKET,
+                "--workers", "4",
+                "--batch_size", "32",
+                "--chunk_id", str(i),
+                "--num_tasks", str(s_opt)
+            ])
+
+        # Merge is a single task, so we wrap it in a list to use with get_m_args helper
+        merger_args = [
+            "--mode", "merge",
+            "--input_results_prefix", "inference/results/", 
+            "--output_result_path", "inference/final_merged/inference_results.json", 
+            "--bucket_name", MINIO_BUCKET,
+        ]
+
+        return {
+            "workers": worker_args,
+            "merger": merger_args,
+            "metadata": {
+                "start_time": time.time(),
+                "s": s_opt,
+                "gamma": calculated_gamma,
+                "cluster_load": cluster_load,
+                "amdahl_time": predicted_amdahl,
+                "pred_residual": predicted_residual,
+                "pred_std": predicted_std
+            }
+        }
 
 
-    @task
-    def extract_metadata(data: dict):
-        return data["metadata"]
-
-
+    # =================================
+    # TASK GROUP DEFINITIONS
+    # =================================
     @task_group(group_id="preprocessing_pipeline")
     def image_pipeline_group(offset_args, crop_args, enhance_brightness_args, enhance_contrast_args, rotate_args, grayscale_args, chunk_id):
 
@@ -172,7 +272,6 @@ with DAG(
             image_pull_policy="IfNotPresent",
             node_selector={"kubernetes.io/worker": "worker"},
         )
-
         crop = KubernetesPodOperator(
             task_id="crop",
             name="crop-task",
@@ -185,7 +284,6 @@ with DAG(
             image_pull_policy="IfNotPresent",
             node_selector={"kubernetes.io/worker": "worker"},
         )
-
         enhance_brightness = KubernetesPodOperator(
             task_id="enhance_brightness",
             name="enhance_brightness-task",
@@ -198,7 +296,6 @@ with DAG(
             image_pull_policy="IfNotPresent",
             node_selector={"kubernetes.io/worker": "worker"},
         )
-
         enhance_contrast = KubernetesPodOperator(
             task_id="enhance_contrast",
             name="enhance_contrast-task",
@@ -211,7 +308,6 @@ with DAG(
             image_pull_policy="IfNotPresent",
             node_selector={"kubernetes.io/worker": "worker"},
         )
-
         rotate = KubernetesPodOperator(
             task_id="rotate",
             name="rotate-task",
@@ -224,7 +320,6 @@ with DAG(
             image_pull_policy="IfNotPresent",
             node_selector={"kubernetes.io/worker": "worker"},
         )
-
         grayscale = KubernetesPodOperator(
             task_id="grayscale",
             name="grayscale-task",
@@ -240,59 +335,74 @@ with DAG(
 
         offset >> crop >> enhance_brightness >> enhance_contrast >> rotate >> grayscale
 
-    classification_inference = KubernetesPodOperator(
-        task_id="classification_inference_task",
-        name="classification-inference-task",
-        namespace=NAMESPACE,
-        image="kogsi/image_classification:classification-inference-tf2",
-        arguments=[
-            "--saved_model_path", "models/",
-            "--inference_data_path", "inference/grayscaled",
-            "--output_result_path", "inference/results/inference_results.json",
-            "--bucket_name", MINIO_BUCKET,
-            "--workers", "4",
-        ],
-        env_vars=minio_env_dict,
-        get_logs=True,
-        is_delete_operator_pod=True,
-        image_pull_policy="IfNotPresent",
-        startup_timeout_seconds=600,  # increase time for startup (large image)
-        node_selector={"kubernetes.io/worker": "worker"},
-    )
+    @task_group(group_id="inference_pipeline")
+    def run_inference_pipeline():
+        inference_plan = prepare_inference_configs()
 
+        workers = KubernetesPodOperator.partial(
+            task_id="classification_inference",
+            name="classification-inference-task",
+            namespace=NAMESPACE,
+            image="kogsi/image_classification:classification-inference-tf2",
+            env_vars=minio_env_dict,
+            get_logs=True,
+            is_delete_operator_pod=True,
+            image_pull_policy="IfNotPresent",
+            startup_timeout_seconds=600,
+            node_selector={"kubernetes.io/worker": "worker"},
+        ).expand(
+            arguments=get_w_args(inference_plan)
+        )
 
-    @task(trigger_rule=TriggerRule.ALL_SUCCESS)
-    def report_feedback(metadata: dict, **context):
-        optimizer = ArboOptimizer(namespace=NAMESPACE, is_local=False)
+        # Merge results task (single execution)
+        merge_results = KubernetesPodOperator(
+            task_id="merge_results",
+            name="merge-results-task",
+            namespace=NAMESPACE,
+            image="kogsi/image_classification:classification-inference-tf2", 
+            arguments=[
+                "--mode", "merge",
+                "--input_results_prefix", "inference/results/", 
+                "--output_result_path", "inference/final_merged/inference_results.json", 
+                "--bucket_name", MINIO_BUCKET,
+            ],
+            env_vars=minio_env_dict,
+            get_logs=True,
+            is_delete_operator_pod=True,
+            image_pull_policy="IfNotPresent",
+            node_selector={"kubernetes.io/worker": "worker"},
+        )
 
-        dag_id = context["dag"].dag_id
-        run_id = context["run_id"]
-
-        local_start = context["dag_run"].start_date.timestamp()
-        fallback_dur = time.time() - local_start
-
-        optimizer.report_success(
-            task_name="iisas_image_inference",
-            s=metadata["s"],
-            gamma=metadata["gamma"],
-            cluster_load=metadata["cluster_load"],
-            predicted_amdahl=metadata["amdahl_time"],
-            predicted_residual=metadata["pred_residual"],
-            predicted_std=metadata["pred_std"],
-            dag_id=dag_id,
-            run_id=run_id,
-            target_id="preprocessing_pipeline",
-            fallback_duration=fallback_dur,
+        inference_feedback = report_feedback(
+            metadata=extract_metadata(inference_plan),
+            task_name="iisas_inference",
+            target_group_id="inference_pipeline",
             is_group=True
         )
 
+        workers >> merge_results >> inference_feedback
 
-    pipeline_configs = prepare_pipeline_configs()
+
+    # =================================
+    # WIRING OF DAG
+    # =================================
+    
+    # 1. Prepare and Run Preprocessing
+    pipeline_configs = prepare_preprocessing_configs()
     pod_config_list = extract_configs(pipeline_configs)
     pipeline_metadata = extract_metadata(pipeline_configs)
 
-    pipeline_instances = image_pipeline_group.expand_kwargs(pod_config_list)
+    preprocessing_instances = image_pipeline_group.expand_kwargs(pod_config_list)
+    
+    preprocessing_feedback = report_feedback(
+        metadata=pipeline_metadata,
+        task_name="iisas_preprocessing",
+        target_group_id="preprocessing_pipeline",
+        is_group=True
+    )
 
-    # pipeline_instances >> classification_inference
-    pipeline_instances >> classification_inference
-    pipeline_instances >> report_feedback(pipeline_metadata)
+    preprocessing_instances >> preprocessing_feedback
+
+    inference_group = run_inference_pipeline()
+
+    preprocessing_feedback >> inference_group

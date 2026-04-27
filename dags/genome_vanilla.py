@@ -77,6 +77,32 @@ with DAG(
                 node_selector={"kubernetes.io/worker": "worker"},
             )
             individual_tasks.append(task)
+        
+        individuals_merge_task = KubernetesPodOperator(
+            task_id="individuals_merge",
+            name="individuals-merge",
+            namespace=NAMESPACE,
+            image="kogsi/genome_dag:individuals-merge",
+            cmds=["python3", "individuals-merge.py"],
+            arguments=[
+                "--chromNr", CHROM_NR,
+                "--keys", ','.join([
+                    f'chr22n-{x * TOTAL_ITEMS + 1}-{(x + 1) * TOTAL_ITEMS + 1}.tar.gz'
+                    for x in range(INDIVIDUAL_WORKERS)
+                ]),
+                "--bucket_name", MINIO_BUCKET
+            ],
+            env_vars=minio_env_vars,
+            get_logs=True,
+            is_delete_operator_pod=True,
+            image_pull_policy="IfNotPresent",
+            execution_timeout=timedelta(hours=1),
+            node_selector={"kubernetes.io/worker": "worker"},
+        )
+        
+        individual_tasks >> individuals_merge_task
+        
+        
 
     # -------------------------------------------------------------------------
     # Sifting (standalone — not grouped, no parallelism to measure)
@@ -100,30 +126,6 @@ with DAG(
         node_selector={"kubernetes.io/worker": "worker"},
     )
 
-    # -------------------------------------------------------------------------
-    # Group: individuals_merge (single task, but keeps collector prefix consistent)
-    # -------------------------------------------------------------------------
-    individuals_merge_task = KubernetesPodOperator(
-        task_id="individuals_merge",
-        name="individuals-merge",
-        namespace=NAMESPACE,
-        image="kogsi/genome_dag:individuals-merge",
-        cmds=["python3", "individuals-merge.py"],
-        arguments=[
-            "--chromNr", CHROM_NR,
-            "--keys", ','.join([
-                f'chr22n-{x * TOTAL_ITEMS + 1}-{(x + 1) * TOTAL_ITEMS + 1}.tar.gz'
-                for x in range(INDIVIDUAL_WORKERS)
-            ]),
-            "--bucket_name", MINIO_BUCKET
-        ],
-        env_vars=minio_env_vars,
-        get_logs=True,
-        is_delete_operator_pod=True,
-        image_pull_policy="IfNotPresent",
-        execution_timeout=timedelta(hours=1),
-        node_selector={"kubernetes.io/worker": "worker"},
-    )
 
     # -------------------------------------------------------------------------
     # Groups: freq_<POP> — one group per population
@@ -208,7 +210,7 @@ with DAG(
                 )
 
         # Wire upstream → freq group
-        individuals_merge_task >> freq_group
+        individual_group >> freq_group
         sifting_task >> freq_group
 
         # Mutations overlap per population (outside freq group)
@@ -235,6 +237,5 @@ with DAG(
     # -------------------------------------------------------------------------
     # Wire remaining dependencies
     # -------------------------------------------------------------------------
-    individual_group >> individuals_merge_task
-    individuals_merge_task >> mutations_overlap_tasks
+    individual_group >> mutations_overlap_tasks
     sifting_task >> mutations_overlap_tasks

@@ -67,7 +67,7 @@ with DAG(
         dag_id = context["dag"].dag_id
         run_id = context["run_id"]
 
-        local_start = context["dag_run"].start_date.timestamp()
+        local_start = metadata["start_time"]
         fallback_dur = time.time() - local_start
 
         optimizer.report_success(
