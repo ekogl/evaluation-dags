@@ -23,7 +23,7 @@ default_args = {
     "retry_delay": timedelta(minutes=5),
 }
 
-TOTAL_ITEMS = 1600
+TOTAL_ITEMS = 80000
 FREQ_TOTAL_PLOTS = 1000
 
 MINIO_ENDPOINT = "minio.default.svc.cluster.local:9000"
