@@ -51,10 +51,11 @@ with DAG(
     # Group: individual_tasks
     # -------------------------------------------------------------------------
     with TaskGroup(group_id="individual_tasks") as individual_group:
+        chunk_size = TOTAL_ITEMS // INDIVIDUAL_WORKERS
         individual_tasks = []
         for x in range(INDIVIDUAL_WORKERS):
-            counter = x * TOTAL_ITEMS + 1
-            stop = (x + 1) * TOTAL_ITEMS + 1
+            counter = x * chunk_size + 1
+            stop = (x + 1) * chunk_size + 1
 
             task = KubernetesPodOperator(
                 task_id=f"individual_{x}",
@@ -87,7 +88,7 @@ with DAG(
             arguments=[
                 "--chromNr", CHROM_NR,
                 "--keys", ','.join([
-                    f'chr22n-{x * TOTAL_ITEMS + 1}-{(x + 1) * TOTAL_ITEMS + 1}.tar.gz'
+                    f'chr22n-{x * chunk_size + 1}-{(x + 1) * chunk_size + 1}.tar.gz'
                     for x in range(INDIVIDUAL_WORKERS)
                 ]),
                 "--bucket_name", MINIO_BUCKET
